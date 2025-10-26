@@ -1,5 +1,6 @@
 use macroquad::{prelude::*, rand::gen_range};
 
+use std::collections::HashMap;
 struct Particle {
     pos: Vec2,
     old_pos: Vec2,
@@ -17,8 +18,6 @@ impl Particle {
     }
 
     fn update(&mut self, dt: f32) {
-        let temp_curr_pos = self.pos; // aktuelle Position speichern
-
         // Gravitationsbeschleunigung
         self.acceleration.y += 100.0;
         // Beschleunigung berechnen. Wird errechnet aus dem Unterschied der alten und aktuellen Position.
@@ -83,17 +82,80 @@ impl Particle {
 
         }
     }
-    fn draw(&self, color: Color) {
+    fn draw(&self) {
+        let velocity = self.pos - self.old_pos;
+        let speed_squared = velocity.length_squared();  // ← Nur x² + y²
+
+        let color = speed_to_color(speed_squared);
+
         draw_circle(self.pos[0], self.pos[1], self.radius, color);
     }
     
 }
-
+// veraltet aber lustig weil es viel weniger Performant ist
 fn resolve_collision(particles: &mut Vec<Particle>) {
     for i in 0..particles.len() {
         for j in i+1..particles.len() {
             let (left, right) = particles.split_at_mut(j);
             left[i].resolve_collision(&mut right[0]);
+        }
+    }
+}
+
+fn build_particle_hashmap(particles: &Vec<Particle>, cell_size: f32) -> HashMap<(i32, i32), Vec<usize>> {
+    let mut hashie: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+
+    for (index, particle) in particles.iter().enumerate() {
+        let cell_x = (particle.pos.x / cell_size) as i32;
+        let cell_y = (particle.pos.y / cell_size) as i32;
+        let cell_key = (cell_x, cell_y);
+
+        hashie.entry(cell_key)
+            .or_insert_with(Vec::new)
+            .push(index);
+    }
+    hashie
+}
+
+fn resolve_collision_with_grid(particles: &mut Vec<Particle>, grid: &HashMap<(i32, i32), Vec<usize>>) {
+    for (cell_key, cell_indices) in grid.iter() { // Über jede Celle wird iteriert.
+        for i in 0..cell_indices.len() { // Über alle Particel in einer Cell werden iteriert und verglichen.
+            for j in i+1..cell_indices.len() {
+                let idx_a = cell_indices[i];  // Konvertiert denn cellindex in einen echten index.
+                let idx_b = cell_indices[j];  
+                // Finde den größeren und kleineren Index
+                let (small_idx, large_idx) = if idx_a < idx_b {
+                    (idx_a, idx_b)
+                } else {
+                    (idx_b, idx_a)
+                };
+                
+                let (left, right) = particles.split_at_mut(large_idx);
+                left[small_idx].resolve_collision(&mut right[0]);
+            }
+        }
+        let neighbors = [ // da wir von oben rechts nach unten links gehen, werden nur diese gechekckt, um dopplungen zu vermeiden. Claude <3
+            (cell_key.0 + 1, cell_key.1), // rechts
+            (cell_key.0 + 1, cell_key.1 + 1), // unten rechts
+            (cell_key.0, cell_key.1 + 1), // unten
+            (cell_key.0 - 1, cell_key.1 + 1) // links unten
+        ];
+        for neighbor_key in neighbors.iter() {
+            if let Some(neighbor_indicies) = grid.get(neighbor_key) { // wenn die Nachbarzelle existiert
+                for &idx_a in cell_indices.iter() {
+                    for &idx_b in neighbor_indicies.iter() {
+                        if idx_a == idx_b { continue; } // wenn es die gleichen sind: überspringen
+                        let (small_idx, large_idx) = if idx_a < idx_b {
+                            (idx_a, idx_b)
+                        } else {
+                            (idx_b, idx_a)
+                        };
+                        
+                        let (left, right) = particles.split_at_mut(large_idx);
+                        left[small_idx].resolve_collision(&mut right[0]);
+                    }
+                }
+            }
         }
     }
 }
@@ -107,9 +169,19 @@ fn update_particles(particles: &mut Vec<Particle>, dt: f32) {
 
 fn draw_particles(particles: &Vec<Particle>) {
     for particle in particles {
-        particle.draw(WHITE)
+        particle.draw()
     }
 }
+fn speed_to_color(speed: f32) -> Color {
+    let normalized = (speed / 20.0).min(1.0);
+    Color::new(
+        normalized,           // Rot-Kanal: steigt mit Geschwindigkeit
+        1.0 - normalized,     // Grün-Kanal: sinkt mit Geschwindigkeit
+        1.0 - normalized,     // Blau-Kanal: sinkt mit Geschwindigkeit
+        1.0                   // Alpha: immer voll sichtbar
+    )
+}
+
 fn spawn_high_particle() -> Particle {
     Particle::new(
         Vec2::new(gen_range(0., screen_width()), gen_range(0., 100.)),
@@ -119,14 +191,11 @@ fn spawn_high_particle() -> Particle {
 }
 #[macroquad::main("Verlet Partikel")]
 async fn main() {
-    let mut particles: Vec<Particle> = vec![
-        Particle::new(Vec2::new(100.0, 100.0), Vec2::new(10., 0.), 10.0),
-        Particle::new(Vec2::new(200.0, 100.0), Vec2::new(-10., 0.), 5.0),
-    ];
+    let mut particles: Vec<Particle> = vec![];
 
     let mut fps_history: Vec<f32> = Vec::new();
 
-    for i in 0..10 {
+    for _i in 0..1 {
         particles.push(spawn_high_particle());
     }
 
@@ -135,11 +204,10 @@ async fn main() {
         clear_background(BLACK);
         
         if is_key_pressed(KeyCode::Key1) {
-            for i in 0..10 {
+            for _i in 0..100 {
                 particles.push(spawn_high_particle());
             }
         }
-
         // HUD
         let fps = get_fps() as f32;
         fps_history.push(fps);
@@ -157,7 +225,11 @@ async fn main() {
 
         update_particles(&mut particles, FIXED_DT);
 
-        resolve_collision(&mut particles);
+        let cell_size = 20.0;
+        let grid = build_particle_hashmap(&particles, cell_size);
+        resolve_collision_with_grid(&mut particles, &grid);
+
+        // resolve_collision(&mut particles);
 
         draw_particles(&particles);
 
