@@ -19,7 +19,7 @@ impl Particle {
 
     fn update(&mut self, dt: f32) {
         // Gravitationsbeschleunigung
-        self.acceleration.y += 100.0;
+        self.acceleration = vec2(0., 100.0); // nur Gravitation
         // Beschleunigung berechnen. Wird errechnet aus dem Unterschied der alten und aktuellen Position.
         let velocity = self.pos - self.old_pos;
 
@@ -30,8 +30,6 @@ impl Particle {
         self.old_pos = self.pos;
 
         self.pos = new_pos;
-        // Acc zurücksetzen 
-        self.acceleration = vec2(0., 0.)
     }
     
     fn wall_constrains(&mut self, width: f32, height: f32) {
@@ -181,7 +179,24 @@ fn speed_to_color(speed: f32) -> Color {
         1.0                   // Alpha: immer voll sichtbar
     )
 }
+fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) {
 
+    let force = 300.;
+    let force_radius = 100.;
+
+    for particle in particles.iter_mut() {
+        let delta = particle.pos - mouse_pos;
+        let distance = delta.length();
+
+        if distance < force_radius && distance > 0.1 {
+            // Je näher, desto stärker.
+            let force_strength = force / distance;
+            let direction = delta / distance;
+
+            particle.acceleration += direction * force_strength;
+        }
+    }
+}
 fn spawn_high_particle() -> Particle {
     Particle::new(
         Vec2::new(gen_range(0., screen_width()), gen_range(0., 100.)),
@@ -221,9 +236,14 @@ async fn main() {
             10.0, 20.0, 24.0, fps_color
         );
 
-        // particles.push(spawn_high_particle());
-
+        //if is_mouse_button_down(MouseButton::Left) {
+        if is_key_down(KeyCode::A) {
+            let mouse_pos = Vec2::new(mouse_position().0, mouse_position().1);
+            mouse_push_force(&mut particles, mouse_pos);
+            println!("hehal")
+        }
         update_particles(&mut particles, FIXED_DT);
+        
 
         let cell_size = 20.0;
         let grid = build_particle_hashmap(&particles, cell_size);
