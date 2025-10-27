@@ -65,11 +65,14 @@ impl Particle {
     fn resolve_collision(&mut self, other: &mut Particle) {
         let delta = self.pos - other.pos; // Wie weit sind die beiden auseinander?
 
-        let dist = delta.length(); // errechnet die Länge des Vektors
+        let dist_squared = delta.length_squared(); // errechnet die Länge des Vektors
 
         let min_dist = self.radius + other.radius;
+        let min_dist_squared = min_dist * min_dist;
 
-        if dist - min_dist < 0.0 && dist > 0.0 {
+        if dist_squared - min_dist_squared < 0.0 && dist_squared > 0.0 {
+            let dist = dist_squared.sqrt();
+            
             let overlap = min_dist - dist;
 
             let direction = delta / dist;
@@ -217,7 +220,7 @@ fn spawn_high_particle() -> Particle {
 }
 #[macroquad::main("Verlet Partikel")]
 async fn main() {
-    let mut particles: Vec<Particle> = vec![];
+    let mut particles: Vec<Particle> = Vec::with_capacity(5000);
 
     let mut fps_history: Vec<f32> = Vec::new();
 
@@ -231,10 +234,11 @@ async fn main() {
 
     const FIXED_DT: f32 = 1.0 / 60.0;
     loop {
-        clear_background(BLACK);
+        //clear_background(BLACK);
+        draw_rectangle(0., 0., screen_width(), screen_height(), Color::new(0., 0., 0., 0.1));
         // Key Inputs
         if is_key_pressed(KeyCode::Key1) {
-            for _i in 0..1000 {
+            for _i in 0..100 {
                 particles.push(spawn_high_particle());
             }
         }
@@ -269,16 +273,24 @@ async fn main() {
             &format!("FPS: {:.1} | Partikel: {}", avg_fps, particles.len()),
             10.0, 20.0, 24.0, fps_color
         );
+        
+        // let mut substeps = 4;
+        // if avg_fps < 50. {
+        //     substeps = 2;
+        // }
 
-        update_particles(&mut particles, FIXED_DT, bool_gravity);
+        let substeps = if particles.len() > 6000 { 2 } else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
+        let sub_dt = FIXED_DT / substeps as f32;
+        for _ in 0..substeps {
+            update_particles(&mut particles, sub_dt, bool_gravity);
 
-        grid.clear();
-        let cell_size = 20.0;
-        fill_grid(&mut grid, &particles, cell_size);
+            grid.clear();
+            let cell_size = 14.0;
+            fill_grid(&mut grid, &particles, cell_size);
 
-        //let grid = build_particle_hashmap(&particles, cell_size);
-        resolve_collision_with_grid(&mut particles, &grid);
-
+            //let grid = build_particle_hashmap(&particles, cell_size);
+            resolve_collision_with_grid(&mut particles, &grid);
+        }
         // resolve_collision(&mut particles);
 
         draw_particles(&particles);
