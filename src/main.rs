@@ -18,10 +18,14 @@ impl Particle {
             radius,
         }
     }
+    fn apply_foce(&mut self, f: Vec2) {
+        self.acceleration += f;
+    }
 
     fn update(&mut self, dt: f32, gravity: bool) {
         // Gravitationsbeschleunigung
-        if gravity { self.acceleration = vec2(0., 100.); } // nur Gravitation
+        if gravity { self.apply_foce(vec2(0., 100.)); } else { self.apply_foce(vec2(0., 0.)); } // nur Gravitation
+        self.apply_foce(vec2(0., 100.));
         // Beschleunigung berechnen. Wird errechnet aus dem Unterschied der alten und aktuellen Position.
         let velocity = self.pos - self.old_pos;
 
@@ -32,6 +36,8 @@ impl Particle {
         self.old_pos = self.pos;
 
         self.pos = new_pos;
+
+        self.acceleration = vec2(0., 0.)
     }
     
     fn wall_constrains(&mut self, width: f32, height: f32) {
@@ -186,8 +192,7 @@ fn speed_to_color(speed: f32) -> Color {
 }
 
 fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) { // geht nicht
-
-    let force = 300.;
+    let force = 3000.;
     let force_radius = 100.;
 
     for particle in particles.iter_mut() {
@@ -196,10 +201,10 @@ fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) { // geht ni
 
         if distance < force_radius && distance > 0.1 {
             // Je näher, desto stärker.
-            let force_strength = force / distance;
+            let force_strength = 20. * force / distance;
             let direction = delta / distance;
 
-            particle.acceleration += direction * force_strength;
+            particle.apply_foce(direction * force_strength);
         }
     }
 }
@@ -246,6 +251,10 @@ async fn main() {
             let mouse_pos = Vec2::new(mouse_position().0, mouse_position().1);
             mouse_spawn_particle(&mut particles, mouse_pos);
         }
+        if is_key_down(KeyCode::P) {
+            let mouse_pos = Vec2::new(mouse_position().0, mouse_position().1);
+            mouse_push_force(&mut particles, mouse_pos);
+        }
         if is_key_pressed(KeyCode::R) {
             particles = vec![];
         }
@@ -257,7 +266,7 @@ async fn main() {
             }
         }
         if is_key_pressed(KeyCode::C) {
-            for mut p in &mut particles {
+            for p in &mut particles {
                 p.calm()
             }       
         }
@@ -279,7 +288,7 @@ async fn main() {
         //     substeps = 2;
         // }
 
-        let substeps = if particles.len() > 6000 { 2 } else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
+        let substeps = if particles.len() > 80000 { 2 } else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
         let sub_dt = FIXED_DT / substeps as f32;
         for _ in 0..substeps {
             update_particles(&mut particles, sub_dt, bool_gravity);
