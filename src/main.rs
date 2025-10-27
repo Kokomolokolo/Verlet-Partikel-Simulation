@@ -116,7 +116,7 @@ fn resolve_collision(particles: &mut Vec<Particle>) {
 
 fn fill_grid<'a>(hashie: &'a mut HashMap<(i32, i32), Vec<usize>>, particles: &Vec<Particle>, cell_size: f32) -> &'a mut HashMap<(i32, i32), Vec<usize>> {
     //let mut hashie: HashMap<(i32, i32), Vec<usize>> = HashMap::default();
-
+    hashie.reserve(particles.len() / 4);
     for (index, particle) in particles.iter().enumerate() {
         let cell_x = (particle.pos.x / cell_size) as i32;
         let cell_y = (particle.pos.y / cell_size) as i32;
