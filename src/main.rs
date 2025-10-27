@@ -1,6 +1,8 @@
 use macroquad::{prelude::*, rand::gen_range};
 
-use std::collections::HashMap;
+//use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap; //schnellere Hashmap
+
 struct Particle {
     pos: Vec2,
     old_pos: Vec2,
@@ -17,9 +19,9 @@ impl Particle {
         }
     }
 
-    fn update(&mut self, dt: f32) {
+    fn update(&mut self, dt: f32, gravity: bool) {
         // Gravitationsbeschleunigung
-        self.acceleration = vec2(0., 100.0); // nur Gravitation
+        if gravity { self.acceleration = vec2(0., 100.); } // nur Gravitation
         // Beschleunigung berechnen. Wird errechnet aus dem Unterschied der alten und aktuellen Position.
         let velocity = self.pos - self.old_pos;
 
@@ -100,8 +102,8 @@ fn resolve_collision(particles: &mut Vec<Particle>) {
     }
 }
 
-fn build_particle_hashmap(particles: &Vec<Particle>, cell_size: f32) -> HashMap<(i32, i32), Vec<usize>> {
-    let mut hashie: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+fn fill_grid<'a>(hashie: &'a mut HashMap<(i32, i32), Vec<usize>>, particles: &Vec<Particle>, cell_size: f32) -> &'a mut HashMap<(i32, i32), Vec<usize>> {
+    //let mut hashie: HashMap<(i32, i32), Vec<usize>> = HashMap::default();
 
     for (index, particle) in particles.iter().enumerate() {
         let cell_x = (particle.pos.x / cell_size) as i32;
@@ -109,7 +111,7 @@ fn build_particle_hashmap(particles: &Vec<Particle>, cell_size: f32) -> HashMap<
         let cell_key = (cell_x, cell_y);
 
         hashie.entry(cell_key)
-            .or_insert_with(Vec::new)
+            .or_insert_with(|| Vec::with_capacity(8))
             .push(index);
     }
     hashie
@@ -158,9 +160,9 @@ fn resolve_collision_with_grid(particles: &mut Vec<Particle>, grid: &HashMap<(i3
     }
 }
 
-fn update_particles(particles: &mut Vec<Particle>, dt: f32) {
+fn update_particles(particles: &mut Vec<Particle>, dt: f32, bool_gravity: bool) {
     for particle in particles {
-        particle.update(dt);
+        particle.update(dt, bool_gravity);
         particle.wall_constrains(screen_width(),screen_height());
     }
 }
@@ -171,15 +173,13 @@ fn draw_particles(particles: &Vec<Particle>) {
     }
 }
 fn speed_to_color(speed: f32) -> Color {
-    let normalized = (speed / 20.0).min(1.0);
-    Color::new(
-        normalized,           // Rot-Kanal: steigt mit Geschwindigkeit
-        1.0 - normalized,     // Grün-Kanal: sinkt mit Geschwindigkeit
-        1.0 - normalized,     // Blau-Kanal: sinkt mit Geschwindigkeit
-        1.0                   // Alpha: immer voll sichtbar
-    )
+    let normalized = (speed / 25.0).min(1.0);
+    let r = normalized.powf(1.5);
+    let g = (1.0 - normalized).powf(2.0);
+    Color::new(r, g, 1.0 - r, 1.0)
 }
-fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) {
+
+fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) { // geht nicht
 
     let force = 300.;
     let force_radius = 100.;
@@ -197,6 +197,14 @@ fn mouse_push_force(particles: &mut Vec<Particle>, mouse_pos: Vec2) {
         }
     }
 }
+fn mouse_spawn_particle(particles: &mut Vec<Particle>, mouse_pos: Vec2) {
+    let particle = Particle::new(
+        Vec2::new(mouse_pos.x, mouse_pos.y),
+        Vec2::new(gen_range(-2., 2.), gen_range(-2., 2.)),
+        gen_range(2.0, 7.0)
+    );
+    particles.push(particle);
+}
 fn spawn_high_particle() -> Particle {
     Particle::new(
         Vec2::new(gen_range(0., screen_width()), gen_range(0., 100.)),
@@ -210,6 +218,10 @@ async fn main() {
 
     let mut fps_history: Vec<f32> = Vec::new();
 
+    let mut bool_gravity = true;
+
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::default();
+
     for _i in 0..1 {
         particles.push(spawn_high_particle());
     }
@@ -217,12 +229,27 @@ async fn main() {
     const FIXED_DT: f32 = 1.0 / 60.0;
     loop {
         clear_background(BLACK);
-        
+        // Key Inputs
         if is_key_pressed(KeyCode::Key1) {
             for _i in 0..100 {
                 particles.push(spawn_high_particle());
             }
         }
+        if is_mouse_button_down(MouseButton::Left) {
+            let mouse_pos = Vec2::new(mouse_position().0, mouse_position().1);
+            mouse_spawn_particle(&mut particles, mouse_pos);
+        }
+        if is_key_pressed(KeyCode::R) {
+            particles = vec![];
+        }
+        if is_key_pressed(KeyCode::G) {
+            if bool_gravity {
+                bool_gravity = false;
+            } else {
+                bool_gravity = true;
+            }
+        }
+
         // HUD
         let fps = get_fps() as f32;
         fps_history.push(fps);
@@ -236,17 +263,13 @@ async fn main() {
             10.0, 20.0, 24.0, fps_color
         );
 
-        //if is_mouse_button_down(MouseButton::Left) {
-        if is_key_down(KeyCode::A) {
-            let mouse_pos = Vec2::new(mouse_position().0, mouse_position().1);
-            mouse_push_force(&mut particles, mouse_pos);
-            println!("hehal")
-        }
-        update_particles(&mut particles, FIXED_DT);
-        
+        update_particles(&mut particles, FIXED_DT, bool_gravity);
 
+        grid.clear();
         let cell_size = 20.0;
-        let grid = build_particle_hashmap(&particles, cell_size);
+        fill_grid(&mut grid, &particles, cell_size);
+
+        //let grid = build_particle_hashmap(&particles, cell_size);
         resolve_collision_with_grid(&mut particles, &grid);
 
         // resolve_collision(&mut particles);
