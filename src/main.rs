@@ -90,6 +90,9 @@ impl Particle {
 
         draw_circle(self.pos[0], self.pos[1], self.radius, color);
     }
+    fn calm(&mut self) {
+        self.old_pos = self.pos;
+    }
     
 }
 // veraltet aber lustig weil es viel weniger Performant ist
@@ -231,7 +234,7 @@ async fn main() {
         clear_background(BLACK);
         // Key Inputs
         if is_key_pressed(KeyCode::Key1) {
-            for _i in 0..100 {
+            for _i in 0..1000 {
                 particles.push(spawn_high_particle());
             }
         }
@@ -249,7 +252,11 @@ async fn main() {
                 bool_gravity = true;
             }
         }
-
+        if is_key_pressed(KeyCode::C) {
+            for mut p in &mut particles {
+                p.calm()
+            }       
+        }
         // HUD
         let fps = get_fps() as f32;
         fps_history.push(fps);
